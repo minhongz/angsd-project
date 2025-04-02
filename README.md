@@ -1,2 +1,2 @@
 # angsd-project
-Documentations for Angst final project
+Documentations for Angsd final project
