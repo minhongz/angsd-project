@@ -1,0 +1,15 @@
+Status	./alignment/bm_cd69neg_ind1/bm_cd69neg_ind1.STAR.Aligned.sortedByCoord.out.bam	./alignment/bm_cd69neg_ind2/bm_cd69neg_ind2.STAR.Aligned.sortedByCoord.out.bam	./alignment/bm_cd69neg_ind3/bm_cd69neg_ind3.STAR.Aligned.sortedByCoord.out.bam	./alignment/bm_cd69pos_ind1/bm_cd69pos_ind1.STAR.Aligned.sortedByCoord.out.bam	./alignment/bm_cd69pos_ind2/bm_cd69pos_ind2.STAR.Aligned.sortedByCoord.out.bam	./alignment/bm_cd69pos_ind3/bm_cd69pos_ind3.STAR.Aligned.sortedByCoord.out.bam	./alignment/ln_cd69neg_ind1/ln_cd69neg_ind1.STAR.Aligned.sortedByCoord.out.bam	./alignment/ln_cd69neg_ind2/ln_cd69neg_ind2.STAR.Aligned.sortedByCoord.out.bam	./alignment/ln_cd69neg_ind3/ln_cd69neg_ind3.STAR.Aligned.sortedByCoord.out.bam	./alignment/ln_cd69pos_ind1/ln_cd69pos_ind1.STAR.Aligned.sortedByCoord.out.bam	./alignment/ln_cd69pos_ind2/ln_cd69pos_ind2.STAR.Aligned.sortedByCoord.out.bam	./alignment/ln_cd69pos_ind3/ln_cd69pos_ind3.STAR.Aligned.sortedByCoord.out.bam
+Assigned	45701812	38817523	46037896	27544336	31995663	28236260	31843073	43565596	32462099	29031060	31101527	32528314
+Unassigned_Unmapped	1460855	832042	1059176	714863	737306	818839	783421	1010024	917998	805630	649733	815953
+Unassigned_Read_Type	0	0	0	0	0	0	0	0	0	0	0	0
+Unassigned_Singleton	0	0	0	0	0	0	0	0	0	0	0	0
+Unassigned_MappingQuality	0	0	0	0	0	0	0	0	0	0	0	0
+Unassigned_Chimera	0	0	0	0	0	0	0	0	0	0	0	0
+Unassigned_FragmentLength	0	0	0	0	0	0	0	0	0	0	0	0
+Unassigned_Duplicate	0	0	0	0	0	0	0	0	0	0	0	0
+Unassigned_MultiMapping	0	0	0	0	0	0	0	0	0	0	0	0
+Unassigned_Secondary	0	0	0	0	0	0	0	0	0	0	0	0
+Unassigned_NonSplit	0	0	0	0	0	0	0	0	0	0	0	0
+Unassigned_NoFeatures	28432312	14016891	22439645	36171952	43689593	69454116	24504917	49451017	10916288	106107825	71671890	89939697
+Unassigned_Overlapping_Length	0	0	0	0	0	0	0	0	0	0	0	0
+Unassigned_Ambiguity	0	0	0	0	0	0	0	0	0	0	0	0
