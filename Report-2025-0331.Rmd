@@ -1,0 +1,250 @@
+---
+title: "Report-2025-0331"
+author: "Minhong Zhu"
+date: "2025-03-31"
+output: 
+  prettydoc::html_pretty:
+    theme: cayman
+    highlight: github
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Alignment
+
+The script below includes several key functions:
+
+1. Downloads raw FASTQ data.
+2. Performs quality control using FastQC.
+3. Aligns reads to the reference genome using STAR.
+4. Assesses alignment quality with Qualimap.
+
+```{bash alignment, eval = FALSE}
+#! /bin/bash -l
+
+sample_id=(SRR6244046 SRR6244047 SRR6244048 SRR6244049 SRR6244050 SRR6244051 \
+           SRR6244052 SRR6244053 SRR6244054 SRR6244055 SRR6244056 SRR6244057 SRR6244058)
+
+sample_name=(bm_cd69neg_ind1_1 bm_cd69neg_ind1_2 bm_cd69neg_ind2 bm_cd69neg_ind3 ln_cd69neg_ind1 \
+             ln_cd69neg_ind3 ln_cd69neg_ind2 bm_cd69pos_ind1 bm_cd69pos_ind2 bm_cd69pos_ind3 \
+             ln_cd69pos_ind1 ln_cd69pos_ind3 ln_cd69pos_ind2)
+
+skip_samples=("bm_cd69neg_ind1_1" "bm_cd69neg_ind1_2")
+
+for i in "${!sample_id[@]}"; do
+    srr="${sample_id[$i]}"
+    sample="${sample_name[$i]}"
+    fq1="./raw_fastq/${srr}_1.fastq.gz"
+    fq2="./raw_fastq/${srr}_2.fastq.gz"
+    renamed_fq1="./raw_fastq/${sample}_1.fastq.gz"
+    renamed_fq2="./raw_fastq/${sample}_2.fastq.gz"
+
+    echo "Processing $srr -> $sample"
+
+    # === Check if FASTQ files already downloaded ===
+    conda activate angsd
+    if [[ -f "$fq1" && -f "$fq2" ]]; then
+        echo "FASTQ files for $srr already downloaded."
+
+        # Rename if not already renamed
+        if [[ ! -f "$renamed_fq1" ]]; then
+            mv "$fq1" "$renamed_fq1"
+            echo "Renamed $fq1 to $renamed_fq1"
+        fi
+        if [[ ! -f "$renamed_fq2" ]]; then
+            mv "$fq2" "$renamed_fq2"
+            echo "Renamed $fq2 to $renamed_fq2"
+        fi
+    elif [[ -f "$renamed_fq1" && -f "$renamed_fq2" ]]; then
+        echo "Renamed FASTQ files for $sample already exist. Skipping download."
+    else
+        echo "Downloading FASTQ files for $srr"
+        conda activate angsd
+        # fastq-dump --split-files --gzip -O ./raw_fastq "$srr"
+        fasterq-dump $srr --split-files -O ./raw_fastq --threads 16
+
+        # Compress
+        pigz -p 16 ./raw_fastq/${srr}_1.fastq
+        pigz -p 16 ./raw_fastq/${srr}_2.fastq
+
+        # Rename after download
+        mv "$fq1" "$renamed_fq1"
+        mv "$fq2" "$renamed_fq2"
+
+        # === FastQC ===
+        fastqc "$renamed_fq1" "$renamed_fq2" -o ./raw_fastq/fastqc_raw_report
+
+    fi
+
+    # === Skip samples from bw_cd69neg_ind1 ===
+    if [[ " ${skip_samples[@]} " =~ " ${sample} " ]]; then
+        echo "Skipping alignment for $sample (marked for later processing)"
+        continue
+    fi
+
+    # === STAR Alignment ===
+    mkdir -p "./alignment/${sample}"
+    STAR --runMode alignReads \
+        --runThreadN 16 \
+        --genomeDir /athena/angsd/scratch/miz4010/project/refGenomes/hg38_STARindex \
+        --readFilesIn "$renamed_fq1" "$renamed_fq2" \
+        --readFilesCommand zcat \
+        --alignIntronMax 100000 \
+        --alignSJDBoverhangMin 3 \
+        --outFileNamePrefix "./alignment/${sample}/${sample}.STAR." \
+        --outSAMtype BAM SortedByCoordinate \
+        --outSAMunmapped Within \
+        --outSAMattributes All
+
+    samtools index -@ 16 "./alignment/${sample}/${sample}.STAR.Aligned.sortedByCoord.out.bam"
+
+    # === Qualimap ===
+    conda activate qualimap
+    qualimap bamqc -bam "./alignment/${sample}/${sample}.STAR.Aligned.sortedByCoord.out.bam" \
+        -outformat PDF -outfile "${sample}.STAR.report.pdf"
+
+    echo "Finished processing $sample"
+done
+
+```
+
+The bone marrow CD69⁻ sample from donor 1 was split into two sub-samples due to multiplexing. After quality control, no significant technical bias was detected between them. Therefore, the two sub-samples were concatenated prior to alignment. The corresponding scripts are provided below.
+
+```{bash alignment_special, eval=FALSE}
+#! /bin/bash -l
+
+zcat ./raw_fastq/bm_cd69neg_ind1_1_1.fastq.gz ./raw_fastq/bm_cd69neg_ind1_2_1.fastq.gz | gzip > ./raw_fastq/bm_cd69neg_ind1_1.fastq.gz
+zcat ./raw_fastq/bm_cd69neg_ind1_1_2.fastq.gz ./raw_fastq/bm_cd69neg_ind1_2_2.fastq.gz | gzip > ./raw_fastq/bm_cd69neg_ind1_2.fastq.gz
+
+read1="./raw_fastq/bm_cd69neg_ind1_1.fastq.gz"
+read2="./raw_fastq/bm_cd69neg_ind1_2.fastq.gz"
+sample="bm_cd69neg_ind1"
+
+conda activate angsd
+
+STAR --runMode alignReads \
+    --runThreadN 16 \
+    --genomeDir /athena/angsd/scratch/miz4010/project/refGenomes/hg38_STARindex \
+    --readFilesIn ${read1} ${read2} \
+    --readFilesCommand zcat \
+    --alignIntronMax 100000 \
+    --alignSJDBoverhangMin 3 \
+    --outFileNamePrefix "./alignment/${sample}/${sample}.STAR." \
+    --outSAMtype BAM SortedByCoordinate \
+    --outSAMunmapped Within \
+    --outSAMattributes All
+
+samtools index -@ 16 "./alignment/${sample}/${sample}.STAR.Aligned.sortedByCoord.out.bam"
+
+conda activate qualimap
+qualimap bamqc -bam "./alignment/${sample}/${sample}.STAR.Aligned.sortedByCoord.out.bam" \
+    -outformat PDF -outfile "${sample}.STAR.report.pdf"
+
+echo "Finished processing $sample"
+
+```
+
+## Quality control and read count generation
+
+The following script runs QoRTs to perform additional alignment quality checks.
+
+```{bash qorts, eval = FALSE}
+#! /bin/bash -l
+
+conda activate qorts
+qorts_jar="/athena/angsd/scratch/diz4009/qorts/hartleys-QoRTs-099881f/QoRTs.jar"
+
+sample_name=(bm_cd69neg_ind1 bm_cd69neg_ind2 bm_cd69neg_ind3 ln_cd69neg_ind1 \
+             ln_cd69neg_ind3 ln_cd69neg_ind2 bm_cd69pos_ind1 bm_cd69pos_ind2 \
+             bm_cd69pos_ind3 ln_cd69pos_ind1 ln_cd69pos_ind3 ln_cd69pos_ind2)
+
+for i in "${!sample_name[@]}"; do
+    sample="${sample_name[$i]}"
+
+    java -Xmx60G -jar "$qorts_jar" QC \
+        --generatePdfReport \
+        --stranded \
+        --numThreads 24 \
+        ./alignment/${sample}/*.bam \
+        ./refGenomes/gencode.v47.basic.annotation.gtf \
+        ./qorts/${sample}/
+done
+```
+
+The following scripts use `featureCounts` to generate a read count table. As demonstrated in the later section, a substantial portion of reads is assigned to intronic regions — an indicator of potential data quality issues.
+
+```{bash featureCounts, eval = FALSE}
+#! /bin/bash -l
+
+conda activate angsd
+
+mkdir -p ./featureCounts
+annot_file="./refGenomes/gencode.v47.basic.annotation.gtf"
+
+featureCounts -T 24 \
+    -a ${annot_file} \
+    -o ./featureCounts/fc_output.txt \
+    -s 2 \
+    -t gene \
+    -g gene_id \
+    -M -O -p --countReadPairs \
+    ./alignment/*_cd69*/*.bam
+
+```
+
+The generated read count table can be imported into R using the following code.
+
+```{r load_table, eval=FALSE}
+
+sample_names <- c(
+  "bm_cd69neg_ind1", "bm_cd69neg_ind2", "bm_cd69neg_ind3", 
+  "bm_cd69pos_ind1", "bm_cd69pos_ind2", "bm_cd69pos_ind3",
+  "ln_cd69neg_ind1", "ln_cd69neg_ind2", "ln_cd69neg_ind3",
+  "ln_cd69pos_ind1", "ln_cd69pos_ind2", "ln_cd69pos_ind3"
+)
+
+read.counts <- read.table("./featureCounts/fc_output.txt", header = TRUE, comment.char = "#", sep = "\t")
+colnames(read.counts)[7:18] <- sample_names
+```
+
+## Result analysis
+
+### Fastqc results
+
+In general, the sequencing quality appears to be consistent and acceptable across the samples. The sequence count plots show no clear bias across tissue types (bone marrow vs. lymph node), T cell activation status (CD69+ vs. CD69−), or between different donors.
+
+```{r, echo=FALSE, out.width='80%', fig.align='center'}
+knitr::include_graphics("./figures/fastqc_sequence_counts_plot.png")
+```
+
+Quality warnings are primarily driven by the GC content distribution and the presence of overrepresented sequences. An abnormal peak at the high-GC region is consistently observed across samples, likely due to the prevalence of GC-rich overrepresented sequences. BLAST analysis of the top five overrepresented sequences reveals that they all correspond to 28S rRNA, indicating potential rRNA contamination during library preparation.
+
+```{r, echo=FALSE, out.width='80%', fig.align='center'}
+knitr::include_graphics("./figures/fastqc_per_sequence_gc_content_plot.png")
+```
+
+```{r, echo=FALSE, out.width='80%', fig.align='center'}
+knitr::include_graphics("./figures/fastqc_overrepresented_sequences_plot.png")
+```
+
+### Qualimap results
+
+Reviewing the alignment statistics provided by STAR reveals that while some samples have a reasonable number of uniquely mapped reads, others—such as the lymph node CD69+ samples from donor 1—show a high proportion of multi-mapping reads. This variation suggests inconsistencies in alignment quality across samples. 
+
+```{r, echo=FALSE, out.width='80%', fig.align='center'}
+knitr::include_graphics("./figures/star_alignment_plot.png")
+```
+
+### Qort results
+
+Based on the Qort quality control analysis, a substantial proportion of aligned reads are mapped to intronic regions. Among the 12 samples, those derived from bone marrow exhibit a higher proportion of genomic reads compared to those from the lymph node. This raises questions about whether the sequencing protocol used was truly polyA-selection, as stated in the paper, or if it was in fact ribo-depletion. This discrepancy also serves as a potential warning sign regarding the overall data quality.
+
+```{r, echo=FALSE, out.width='80%', fig.align='center'}
+knitr::include_graphics("./figures/qorts_alignments.png")
+```
+
+## Concerns
+
+Following alignment and quality control, there are significant concerns about the suitability of the data for downstream analysis, as some samples contain only 20–30% effective exonic reads. If the library preparation protocol was indeed rRNA depletion, I would appreciate guidance on how to appropriately handle potential pre-mRNA reads mapped to intronic regions, in order to minimize bias in subsequent analyses.
