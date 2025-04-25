@@ -1,0 +1,446 @@
+---
+title: "Angsd Final Report"
+author: "Minhong Zhu"
+date: "2025-04-20"
+output: 
+  prettydoc::html_pretty:
+    theme: cayman
+    highlight: github
+bibliography: reference.bib
+csl: vancouver.csl
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Introduction
+CD8⁺ T cells play a central role in adaptive immunity, mediating cytotoxic responses against infected or malignant cells. Although the majority of effector CD8+ T cells are short-lived in vivo, a subset of primed effector cells differentiate and persist as populations of long-lived memory T cells. Most of the memory CD8+ T cells in the body are localized in tissue sites, particularly in lymphoid tissues, including bone marrow (BM), spleen and an estimated 700 lymph nodes (LN) [@ganusov2007most], where T cell responses are initiated, regulated, and maintained. 
+
+In human tissues, a significant fraction of memory T cells express markers, including CD69 and CD103, which denote tissue resident memory T (TRM) [@kumar2017human, @thome2015emerging]. Emerging evidence indicates that tissue-specific microenvironments play a critical role in shaping the phenotype and function of CD8⁺ T cells [@masopust2019tissue, @milner2018transcriptional]. Consequently, a systematic comparison of gene expression profiles in CD8⁺ T cells across different lymphoid tissues, such as bone marrow and lymph nodes, is of considerable interest. Such analyses have the potential to reveal mechanisms underlying tissue-specific T cell functionality and may inform the development of targeted immunotherapies.
+
+In this project, we investigate whether there are systematic differences in gene expression between CD8⁺ T cells derived from bone marrow and lymph nodes. We hypothesize that a substantial number of genes are differentially expressed between these two tissue environments, collectively contributing to tissue-specific CD8⁺ T cell functionality.
+
+Using whole-genome RNA sequencing data obtained from [@miron2018human], we identified over 4,000 differentially expressed genes (DEGs) distinguishing bone marrow and lymph node CD8⁺ T cells. These DEGs delineate a clear transcriptomic separation between the two tissue-derived populations. Further analysis of key marker genes suggests that lymph node CD8⁺ T cells exhibit enhanced proliferative potential and reduced effector function compared to their bone marrow counterparts, highlighting functional divergence shaped by the local tissue microenvironment.
+
+# Methods
+
+## Dataset preparation
+
+### Data source and sample description
+The RNA-seq dataset used in this project was obtained from the Gene Expression Omnibus (GEO) under accession number GSE106420. This dataset includes transcriptomic profiles of memory T cells (CD3⁺CD4⁻CD8⁺CD45RO⁺), stratified by CD69 expression (CD69⁺ or CD69⁻) and tissue origin (bone marrow or lymph node). Samples were obtained from three deceased (brain-dead) organ donors, each contributing four distinct cell populations: CD69⁺ and CD69⁻ memory T cells from both bone marrow and lymph nodes, resulting in a total of 12 samples. Donors were free of chronic diseases and malignancies, and tested negative for hepatitis B, hepatitis C, and HIV. Tissues were collected at the time of organ procurement for clinical transplantation.
+
+### RNA extraction and sequencing
+Total RNA was extracted using the QIAGEN AllPrep DNA/RNA Kit. RNA samples (200 ng to 1 µg per sample, with RIN > 8) were sent to the Columbia Genome Center for processing. mRNA was enriched via poly(A) selection, followed by library preparation using the Illumina TruSeq RNA Sample Preparation Kit. Sequencing was performed on the Illumina HiSeq 2000 platform.
+
+### Raw data retrieval and quality control
+Raw FASTQ files were downloaded using fasterq-dump (version 3.0.8) with the provided SRA accession IDs. Compared to fastq-dump, fasterq-dump offers improved speed and robustness for downloading large sequencing datasets. As the dataset was generated using paired-end sequencing, the --split-files flag was used to output the forward and reverse reads into separate files. Since fasterq-dump does not support on-the-fly compression, the resulting FASTQ files were subsequently compressed using pigz. Quality control of the raw reads was performed using FastQC (0.12.1).
+
+The bone marrow CD69⁻ sample from donor 1 was sequenced in two sub-samples due to multiplexing. Following quality control, no significant technical differences were observed between the two sub-samples. As a result, they were concatenated to reconstruct the complete sample for downstream analysis. 
+
+FASTQC results on all 12 samples are summarized using MultiQC (version 1.17).
+
+## Preprocessing
+
+### Ribosome RNA removal
+Quality control results indicated high per-base sequencing quality and minimal residual adapter content, supporting the decision to skip adapter trimming. However, abnormal peaks at the high-GC region in the GC content distribution plot, along with the presence of overrepresented GC-rich sequences, raised concerns about potential contamination (see Results section for details). To investigate further, the top five overrepresented sequences were queried against the NCBI BLASTn database. All five sequences matched human ribosomal RNA (rRNA) reference sequences, suggesting incomplete rRNA depletion during library preparation. To minimize potential biases introduced by rRNA contamination in downstream analyses, rRNA-derived reads were removed from the raw FASTQ files.
+
+rRNA sequences were removed by aligning raw reads to a custom-built human rRNA reference genome and retaining only the unmapped reads for downstream analysis. Read alignment was performed using STAR (version 2.7.11a). Human rRNA reference sequences were downloaded from GenBank, including: NR_003287.4 (28S rRNA), NR_003286.4 (18S rRNA), NR_003285.3 (5.8S rRNA), NR_023363.1 (5S rRNA), and NR_146144.1 (45S pre-rRNA). These sequences were concatenated into a single FASTA file named rRNA.genome.fa. A STAR genome index was then generated. The `--genomeSAindexNbases` parameter was adjusted based on the total size of the rRNA reference to optimize indexing performance.
+
+Finally, raw FASTQ files were aligned to the rRNA reference genome using STAR. To retain only non-rRNA reads, the `--outReadsUnmapped Fastx` was specified, which outputs unmapped reads in FASTQ format. These unmapped reads were used for downstream analysis. 
+
+FASTQC results on read files after rRNA removal shows a significant decrease of overrepresented sequences and abnormal GC content peaks. See results section for more details.
+
+### Read Alignment 
+To align reads to the human genome, a STAR reference index was first generated using the GENCODE human reference genome (version 47, primary assembly) and the corresponding basic annotation GTF file. The index was built using `--runMode genomeGenerate`, with the parameter `--sjdbOverhang` set to 99, based on a read length of 100 bp.
+
+Following index generation, reads were aligned to the reference genome using `--runMode alignReads`. The parameter `--alignIntronMax` was set to 100,000, which accommodates the vast majority of annotated human introns. To increase the specificity of splice junction detection, given the relatively deep sequencing coverage, `--alignSJDBoverhangMin` was set to 3 instead of the default value of 1. Additionally, `--outSAMunmapped Within` was specified to include unmapped reads in the output BAM files.
+
+The resulting BAM files were indexed using Samtools (version 1.18), and alignment quality was assessed using Qualimap (version 2.3). Summary statistics across all samples were aggregated using MultiQC.
+
+To evaluate the impact of rRNA contamination on alignment performance, STAR alignment was performed on both raw and rRNA-depleted FASTQ files, and the results were compared. The proportion of multi-mapping reads was substantially reduced following the removal of rRNA-derived sequences (see Results section).
+
+### Gene counts assignment
+To assign aligned reads to annotated genes, QoRTs (version 1.3.6) was used to assess read distribution relative to the reference gene annotation. The `--stranded` flag was enabled to account for the stranded nature of the library preparation. Quality control results exhibit a potential 3' degradation and a high intronic reads rate. Possible explanations include contamination during the poly(A) selection process or the use of an rRNA depletion protocol instead of poly(A) enrichment. However, without additional experimental details, the exact cause cannot be conclusively determined.
+
+Aligned reads were assigned to genes using featureCounts (version 2.0.6). Based on the strandness test results from QoRTs, the library was determined to be reverse-stranded; therefore, the `-s 2` option was used. To restrict counting to reads mapped to exonic regions of mRNAs, the `-t exon` parameter was specified. For paired-end data, `-p ` and `--countedReads` were used to ensure proper handling of read pairs. Additionally, the `-g gene_name` option was set to assign counts using gene symbols instead of gene IDs, facilitating interpretability in downstream analyses.
+
+Gene count profiles from both raw and rRNA-depleted datasets showed highly similar results, indicating that rRNA contamination had minimal impact on read assignment to genes. However, only 7%–30% of total reads were successfully assigned to annotated genes, resulting in a relatively small effective library size despite the high raw sequencing depth.
+
+## Gene count profile exploration
+In this section, the gene count matrix generated by featureCounts is loaded and preprocessed in R (version 4.2.0). Exploratory analyses, including sample clustering and principal component analysis (PCA), are performed to assess global transcriptional differences between memory CD8+ T cells isolated from bone marrow and lymph nodes. All relevant R scripts are provided below.
+
+The gene count data are first imported and sample names are standardized using the format "tissue_residency_donorID". For example, "bm_neg_1" denotes a CD69⁻ memory T cell sample from bone marrow of donor 1. The associated preprocessing script is shown below.
+
+```{r, eval=FALSE}
+folder <- "./featureCounts/"
+df_counts <- read.table(paste0(folder, "fc_output_trimmed_exon.txt"), 
+                        header = TRUE, comment.char = "#", sep = "\t")
+orig_names <- names(df_counts)
+names(df_counts) <- gsub(".*(bm|ln)_cd69(pos|neg)_ind([1-3]).*", 
+                         "\\1_\\2_\\3", orig_names)
+```
+
+### Create DESeq dataset object
+Use R package DESeq2 (version 1.38.3) to perform exploratory analysis and the subsequent differential gene analysis. A `DESeqDataSet` object is required to be created in advance.
+
+Load required R packages in advance:
+```{r, eval=FALSE}
+library(DESeq2)
+library(magrittr)
+library(ggplot2)
+library(dplyr)
+```
+
+Firstly, the gene count matrix is prepared to serve the `countData` in `DESeqDataSet` object.
+```{r, eval=FALSE}
+row.names(df_counts) <- make.names(df_counts$Geneid)
+cts_gene_sample <- df_counts[,-c(1:6)]
+```
+
+Next, a metadata data frame (colData) is created to map each sample to its corresponding experimental conditions. Two key variables are considered: the tissue of origin and the residency status of the memory T cells. The tissue variable, named "tissue", includes two levels: "bm" for bone marrow and "ln" for lymph nodes. The residency status, named "residency", distinguishes between circulating (CD69⁻) and tissue-resident (CD69⁺) cells, with levels "cd69neg" and "cd69pos", respectively. For the tissue variable, bone marrow (bm) is set as the reference level, as the analysis focuses on comparing T cell states in lymph nodes relative to those in bone marrow. For the residency variable, cd69neg is used as the reference to highlight the transcriptional behavior of tissue-resident (cd69pos) cells, which are less commonly observed.
+```{r, eval=FALSE}
+df_coldata <- data.frame(
+  tissue = gsub("_(neg|pos)_[1-3]", "", names(cts_gene_sample)),
+  residency = gsub("(bm|ln)_(neg|pos)_[1-3]", "cd69\\2", names(cts_gene_sample)),
+  row.names = colnames(cts_gene_sample)
+)
+df_coldata$tissue %<>% factor()
+df_coldata$residency %<>% factor()
+```
+
+Simultaneously, gene-level metadata—including chromosome location, genomic coordinates, strand orientation, and gene length—is extracted to create the rowData object.
+```{r, eval=FALSE}
+df_rowdata <- df_counts[, 1:6]
+```
+
+Finally, the DESeqDataSet object is constructed. An interactive design is specified to account for the two experimental conditions, with further details provided in the following section. Genes with zero counts across all samples are subsequently filtered out to improve downstream analysis.
+```{r, eval=FALSE}
+dds <- DESeqDataSetFromMatrix(
+  countData = cts_gene_sample,
+  colData = df_coldata,
+  rowData = df_rowdata,
+  design = ~ tissue + residency + tissue:residency
+)
+keep_genes <- rowSums(counts(dds)) > 0
+dds <- dds[keep_genes, ]
+```
+
+### Sample clustering and PCA analysis
+Firstly, a boxplot of gene count library size across samples are created to evaluate library size bias.
+```{r, eval=FALSE}
+png("./figures_final/library_sizes.png", width = 1600, height = 1200, res = 300)
+colSums(counts(dds)) %>% barplot(las = 2, main = "Counts library size")
+dev.off()
+```
+
+To further perform exploratory analysis, raw count matrix requires to be normalized to mitigate potential issues such as dynamic gene range, imbalanced library size and heteroskedasticity. Here we use `rlog` function to normalize the data. `rlog` transforms the read counts to the log2 scale while simultaneously minimizing the difference between samples for rows with small counts and taking differences between library sizes of the samples into account [citation]. The scripts are provided below.
+```{r, eval=FALSE}
+dst_rlog <- rlog(dds, blind = TRUE)
+rlog_norm_counts = assay(dst_rlog)
+```
+
+The first analysis performed is sample clustering. This approach evaluates the similarity of transcriptomic profiles across samples by calculating pairwise correlation distances, followed by hierarchical clustering to construct a dendrogram. The analysis is used to assess the impact of tissue origin and residency status, as well as to explore relationships among individual samples. As for implementation, use `cor` function in R to calculate pairwise correlation, and then use `hclust` to perform hierarchical clustering.
+```{r, eval=FALSE}
+png("./figures_final/sample_cluster.png", width = 1600, height = 1200, res = 300)
+corr_coeff <- cor(rlog_norm_counts, method ="pearson") 
+as.dist(1 - corr_coeff) %>%
+hclust %>%
+plot(labels=colnames(corr_coeff), main="Sample cluster (rlog transformed)", 
+     sub = "", xlab = "", hang = -1)
+dev.off()
+```
+
+The second analysis performed is principal component analysis (PCA). This method assesses whether tissue origin and residency status can be distinguished along principal components, providing insight into the extent of transcriptomic variation.
+
+Since our primary hypothesis centers on transcriptomic differences driven by tissue origin, we first examine the effect of the tissue variable alone, followed by its combination with residency. To visualize sample distribution across the first two principal components, the `plotPCA` function from the DESeq2 package is used.
+```{r, eval=FALSE}
+png("./figures_final/pca_plot_tissue.png", width = 1600, height = 1200, res = 300)
+
+plotPCA(dst_rlog, intgroup = "tissue") + 
+  labs(color=NULL) + 
+  theme_bw()
+dev.off()
+
+png("./figures_final/pca_plot_mix.png", width = 1600, height = 1200, res = 300)
+plotPCA(dst_rlog, intgroup = c("tissue", "residency")) + 
+  labs(color=NULL) + 
+  theme_bw()
+
+dev.off()
+```
+
+## Differential gene expresssion analysis
+
+### Experiment design
+Given the available tissue origin and residency status information, the differential gene expression (DGE) analysis extends beyond a simple comparison between memory T cells from bone marrow and lymph nodes. Specifically, two key questions worth to be addressed:
+
+1. How does tissue origin affect gene expression within both circulating and tissue-resident T cell populations?
+2. Is the tissue effect dependent on residency status?
+
+To answer both questions, an interaction design is employed by including an interaction term in the DESeq2 model. This is specified as `design = ~ tissue + residency + tissue:residency`, which enables the independent estimation of the main effects of tissue and residency, as well as their interaction.
+
+The resulting DESeq2 model output includes four terms:
+
+- `Intercept` – the baseline level (CD69⁻ cells from bone marrow),
+- `tissue_ln_vs_bm` – the main effect of tissue in circulating (CD69⁻) cells,
+- `residency_cd69pos_vs_cd69neg` – the main effect of residency in bone marrow,
+- `tissueln.residencycd69pos` – the interaction term, indicating how the tissue effect differs between CD69⁻ and CD69⁺ cells.
+
+It is important to note that, unlike in an additive model where tissue and residency effects are evaluated independently of one another, in an interaction model the main tissue effect (tissue_ln_vs_bm) is specific to the reference residency level (CD69⁻). To evaluate the tissue effect in tissue-resident (CD69⁺) cells, the main and interaction terms must be combined: `tissue_ln_vs_bm` + `tissueln.residencycd69pos`.
+
+### Perform DGE analysis
+DGE analysis is performed by calling the `DESeq()` function on the prepared dataset:
+```{r DESeq, eval=FALSE}
+dds <- DESeq(dds)
+```
+
+Following model fitting, results corresponding to the main tissue effect and the interaction term are extracted for interpretation. Separate evaluations of the tissue effect within circulating and tissue-resident cell populations are necessary only when a significant interaction is observed, indicating that the tissue effect differs by residency status.
+```{r, eval=FALSE}
+DGE_tissue_results <- results(
+  dds,
+  name = "tissue_ln_vs_bm",
+  independentFiltering = TRUE,
+  alpha = 0.05,
+  saveCols = "Length"
+)
+
+DGE_interaction_results <- results(
+  dds,
+  name = "tissueln.residencycd69pos",
+  independentFiltering = TRUE,
+  alpha = 0.05,
+  saveCols = "Length"
+)
+```
+
+### Results visualization
+To visualize both the statistical significance and the magnitude of differential gene expression, volcano plots are generated. These plots highlight significantly up- or downregulated genes based on user-defined thresholds for log₂ fold change and adjusted p-value. The adjusted p-value threshold was set to 0.05, and the log2 fold change threshold was set to 2.0.
+```{r, eval=FALSE}
+vp_tissue <- EnhancedVolcano(
+  DGE_tissue_results,
+  lab=rownames(DGE_tissue_results), 
+  x='log2FoldChange', 
+  y='padj', 
+  pCutoff=0.05,
+  FCcutoff = 2.0,
+  title="LN / BM"
+)
+ggsave("./figures_final/volcano_ln_vs_bm.png", plot = vp1, 
+       width = 6, height = 8, dpi = 300)
+
+vp_interaction <- EnhancedVolcano(
+  DGE_tissue_results_3,
+  lab=rownames(DGE_tissue_results_3), 
+  x='log2FoldChange', 
+  y='padj', 
+  pCutoff=0.05,
+  FCcutoff = 2.0,
+  title="Interaction"
+)
+ggsave("./figures_final/volcano_interaction.png", plot = vp_tissue_3, 
+       width = 6, height = 8, dpi = 300)
+```
+
+To further explore the expression patterns of differentially expressed genes, a heatmap is plotted using rlog-transformed counts from DESeq2. Genes with an adjusted p-value (padj) less than 0.05 are selected, and expression values are scaled by row to emphasize relative expression changes across samples. Use pheatmap (version 1.0.12) to plot the heatmap.
+```{r, eval=FALSE}
+library(pheatmap)
+
+genes_dge <- rownames(subset(DGE_tissue_results, padj < 0.05))
+
+rlog_dge <- dst_rlog[genes_dge,] %>% assay
+
+png("./figures_final/heatmap_all.png", width = 1200, height = 1600, res = 300)
+pheatmap(
+  rlog_dge, 
+  scale="row",
+  show_rownames=FALSE, 
+  main="DGE Heatmap (row-based z-score)"
+)
+dev.off()
+```
+
+### Marker gene analysis
+To further characterize the transcriptomic profile of CD8⁺ T cells in lymph nodes, a targeted analysis was performed focusing on 22 well-characterized functional genes. This gene set, as described in [citation], encompasses key regulators of T cell differentiation, activation, migration, cytotoxicity, and proliferation.
+
+The genes are categorized as follows:
+
+- Transcription factors: LEF1, BCL6, TCF7, RORC, TBX21
+- Co-stimulation-related: ICOS, CD28
+- Migration-related: CCR7, CXCR5, CXCR4, S1PR5, CCR2
+- Cytotoxicity-related: GZMA, PRF1
+- Wnt signaling-related: WNT10A, CD44, IL2RA, SOX13
+- Cell cycle-related: CCNE1, CDKN1A, GNL3, CDKN2C
+
+A heatmap was generated to visualize the expression patterns of the marker genes that were differentially expressed (adjusted p-value < 0.05).
+```{r, fig.height=8, fig.width=6, eval=FALSE}
+library(pheatmap)
+
+# Label marker genes
+marker_genes <- c(
+  c("LEF1", "BCL6", "TCF7", "RORC", "TBX21"),
+  c("ICOS", "CD28"), 
+  c("CCR7", "CXCR5", "CXCR4", "S1PR5", "CCR2"),
+  c("GZMA", "PRF1"),
+  c("WNT10A", "CD44", "IL2RA", "SOX13"),
+  c("CCNE1", "CDKN1A", "GNL3", "CDKN2C")
+)
+
+function_labels <- c(
+  rep("Transcription Factor", 5), 
+  rep("Co-stimulatory", 2),
+  rep("Migration", 5),
+  rep("Cytoxicity", 2),
+  rep("Wnt Signaling", 4),
+  rep("Cell Cycle", 4)
+)
+
+# Filter to DE genes
+genes_dge <- rownames(subset(DGE_tissue_results, padj < 0.05))
+marker_genes_filtered <- marker_genes[marker_genes %in% gene_dge]
+function_labels_filtered <- function_labels[marker_genes %in% genes_dge]
+
+# Create filtered annotation
+row_anno_df <- data.frame(functions = function_labels_filtered)
+rownames(row_anno_df) <- marker_genes_filtered
+
+# Subset rlog matrix
+rlog_marker <- assay(dst_rlog)[marker_genes_filtered, ]
+
+# Compute gap positions
+gap_positions <- which(diff(as.numeric(factor(row_anno_df$functions))) != 0)
+
+png("./figures_final/heatmap_marker.png", width = 1600, height = 1600, res = 300)
+pheatmap(
+  rlog_marker, 
+  scale="row",
+  show_rownames=TRUE, 
+  annotation_row = row_anno_df,
+  cluster_rows = FALSE,
+  gaps_row = gap_positions,
+  main="DE marker genes"
+)
+dev.off()
+```
+
+# Results
+
+## Preprocessing quality control
+A high proportion of duplicate reads was observed across samples in the raw read library size plot (Figure 1A). Concurrently, the GC content distribution of raw reads (Figure 1C, gray curves) displayed abnormal peaks in GC-rich regions, both of which are indicative of potential rRNA contamination. Following the removal of rRNA-derived reads, the number of duplicate reads decreased substantially (Figure 1B), and the GC-rich peaks (Figure 1C, red curves) were markedly reduced. These changes further support the presence of rRNA contamination in the original libraries.
+
+Library size imbalance is also evident when samples are grouped by experimental conditions rather than by donor. After rRNA removal, CD69⁺ samples exhibit significantly larger effective library sizes compared to CD69⁻ samples—a difference that was less pronounced prior to rRNA depletion. Notably, the `ln_cd69pos` group was the most affected by rRNA contamination, with approximately 50% of total reads in the `ln_cd69pos_1` sample identified as rRNA-derived.
+
+```{r, out.width='49%', echo=FALSE}
+knitr::include_graphics(
+  c("./figures_final/fastqc_counts_raw.png", 
+    "./figures_final/fastqc_counts_trimmed.png")
+)
+```
+```{r, out.width='49%', fig.align='center', echo=FALSE}
+knitr::include_graphics(c("./figures_final/fastqc_gc_all.png"))
+```
+Figure1: FASTQC results. (A, upper left) sequence counts distribution before rRNA removal; (B, upper right) sequence counts distribution after rRNA removal; (C, lower) GC content distribution.
+
+
+Alignment results before and after rRNA removal were compared to assess the impact of rRNA contamination on mapping performance (Figure 2). Prior to rRNA removal (Figure 2A), a substantially higher proportion of multi-mapping reads was observed, whereas post-removal profiles showed a marked reduction in multi-mapping reads. This observation aligns with the repetitive and abundant nature of rRNA sequences, which commonly lead to ambiguous alignments.
+
+However, when evaluating the proportion of reads assigned to genomic features (Figure 2C, D), both conditions yielded similar results. This suggests that while rRNA contamination can affect the alignment process—particularly in terms of computational efficiency and mapping ambiguity—it may have limited influence on downstream gene-level analyses, as rRNA-derived reads are typically excluded during the read counting step.
+
+Meanwhile, reads assignment distribution plots (Figure 2C, D) revealed a substantial proportion of reads mapping to intronic regions in both raw and rRNA-depleted datasets. This pattern suggests possible contamination during the poly(A) selection step or, alternatively, that the libraries were prepared using an rRNA depletion protocol rather than true poly(A) selection.
+
+```{r, out.width='49%', echo=FALSE}
+knitr::include_graphics(
+  c("./figures_final/star_alignment_raw.png", 
+    "./figures_final/star_alignment_trimmed.png", 
+    "./figures_final/qorts_alignment_raw.png", 
+    "./figures_final/qorts_alignment_trimmed.png")
+)
+```
+Figure 2: Alignment results comparison. (A, upper left) STAR alignment statistics of raw dataset; (B, upper right) STAR alignment statistics of rRNA-depleted dataset; (C, lower left) Qorts reads assignment distribuion of raw dataset; (D, lower right) Qorts reads assignment distribution of rRNA-depleted dataset.
+
+
+In summary, the preprocessing quality control reveals notable discrepancies between the reported use of a poly(A) selection protocol and the actual composition of the dataset. Specifically, a substantial proportion of rRNA-derived reads remained, along with a high number of genomic reads likely originating from pre-mature mRNAs. This compromised data quality results in a low yield of mRNA-specific reads despite the overall deep sequencing depth, ultimately leading to relatively small gene count libraries.
+
+Nonetheless, even in the worst-case scenario, each sample retains approximately 5 million reads mapped to annotated genes. This coverage is sufficient to support downstream differential expression analysis and enables the extraction of biologically meaningful insights.
+
+## Exploration analysis
+
+To assess whether transcriptomic profiles differ between CD8⁺ T cell populations derived from bone marrow and lymph nodes, exploratory analyses including gene count distribution, sample clustering and principal component analysis (PCA) were performed.
+
+The distribution of gene count library sizes (Figure 3A) indicates that the `bm_cd69neg` group has a relatively higher number of assigned gene counts, while other groups show comparable library sizes. Sample clustering (Figure 3B) reveals a clear separation between bone marrow and lymph node samples, suggesting a strong tissue-specific transcriptional signature. In contrast, the influence of residency status (CD69⁺ vs. CD69⁻) on global transcriptomic variation appears minimal and is potentially overshadowed by technical factors such as inter-donor variability.
+
+```{r, out.width='49%', echo=FALSE}
+knitr::include_graphics(c("./figures_final/library_sizes.png", "./figures_final/sample_cluster.png"))
+```
+Figure 3: Sample exploration. (A, left) gene counts library size; (B, right) sample clustering results.
+
+PCA analysis further supports the findings from sample clustering. The first principal component distinctly separates bone marrow and lymph node samples (Figure 4A), highlighting tissue origin as the dominant source of transcriptomic variation. In contrast, circulating and tissue-resident T cell populations are not clearly separable based on the first two principal components (Figure 4B), suggesting that residency status has a relatively minor impact on global gene expression profiles.
+
+```{r, out.width='49%', echo=FALSE}
+knitr::include_graphics(c("./figures_final/pca_plot_tissue.png", "./figures_final/pca_plot_mix.png"))
+```
+Figure 4: PCA results visualization. (A) BM v.s. LN; (B) BM v.s. LN + CD69- v.s. CD69+.
+
+
+In summary, the exploratory analyses reveal clear transcriptomic differences between bone marrow and lymph node CD8⁺ T cell populations, providing further support for the underlying hypothesis.
+
+## Differential gene expresssion analysis
+
+Differential gene expression (DGE) analysis focusing on tissue effects identified a total of 4,783 differentially expressed genes (DEGs). The heatmap (Figure 5) illustrates a clear separation between bone marrow and lymph node samples, consistent with the results of the exploratory analyses. The volcano plot (Figure 6) further highlights several notable DEGs. For example, ICOS, a well-characterized T cell co-stimulatory molecule involved in the differentiation of follicular helper T cells (Tfh), was significantly upregulated in lymph node cells. This upregulation may reflect the enhanced activation or proliferative potential of lymph node CD8⁺ T cells.
+
+In contrast, no significant DEGs were identified for the interaction term, suggesting that tissue effects and residency status influence gene expression independently, without a detectable interaction.
+
+```{r, out.width='50%', echo=FALSE, fig.align='center'}
+knitr::include_graphics(c("./figures_final/heatmap_all.png"))
+```
+Figure 5: Heatmap of detected differential expression genes.
+
+```{r, out.width='49%', echo=FALSE}
+knitr::include_graphics(c("./figures_final/volcano_ln_vs_bm.png", "./figures_final/volcano_interaction.png"))
+```
+Figure 6: Volcano plot. (A, left) tissue effect; (B, right) Interaction.
+
+Finally, expression differences in a panel of 22 marker genes were examined. As shown in Figure 7, lymph node (LN) memory CD8⁺ T cells exhibited increased expression of genes associated with self-renewal (LEF1, TCF7), T follicular helper (Tfh) cell differentiation (BCL6, CXCR5, CXCR4, CCR7), and co-stimulation (CD28, ICOS), alongside decreased expression of effector-related transcripts (GZMA, PRF1). Additionally, genes involved in Wnt signaling (WNT10A, CD44, SOX13) and cell cycle regulation (CDKN1A, CDKN2C) were upregulated in LN compared to bone marrow (BM) memory CD8⁺ T cells. These findings suggest that LN CD8⁺ T cells possess enhanced proliferative and differentiation potential, while exhibiting reduced effector activity relative to their BM counterparts.
+
+```{r, out.width='60%', echo=FALSE, fig.align='center'}
+knitr::include_graphics(c("./figures_final/heatmap_marker.png"))
+```
+Figure 7: Heatmap of marker differentially expressed genes.
+
+## Results summary
+The analysis supports the hypothesis that a substantial number of genes are differentially expressed between CD8⁺ T cells derived from bone marrow and lymph nodes. Throughout the workflow, discrepancies in the dataset were identified and partially corrected, and the overall conclusions appear robust, supported by multiple layers of evidence.
+
+Nonetheless, there is considerable room for further improvement. First, given the presence of a large number of pre-mature mRNAs, it would be valuable to incorporate them into the analysis and compare the results to those derived from mature mRNAs. Second, while a few marker genes were examined to infer potential functional differences, a more comprehensive pathway-level or gene set enrichment analysis could provide a broader and more integrated view of tissue-specific T cell function. Third, although the transcriptomic differences between circulating and tissue-resident cells appear less pronounced, several differentially expressed genes were identified in this comparison, warranting further exploration.
+
+# Discussion
+In this project, RNA-seq data of CD8⁺ T cells isolated from both bone marrow and lymph nodes were analyzed to investigate transcriptomic differences across tissue-specific immune cell populations. Although the original dataset was reported to have undergone poly(A) selection during RNA extraction, quality control revealed substantial rRNA contamination and a high abundance of pre-mature mRNAs. To address this, raw reads were first aligned to a custom-built human rRNA reference to filter out potential rRNA-derived sequences, resulting in cleaner libraries for alignment and gene quantification. To further reduce noise from pre-mature transcripts, only reads mapping to exonic regions were retained. This preprocessing strategy resulted in a gene count yield of approximately 7%–30%, forming the basis for downstream analysis.
+
+Despite significant read loss during filtering, both exploratory analysis and differential gene expression (DGE) analysis revealed marked transcriptomic differences between bone marrow and lymph node CD8⁺ T cell populations, supporting the initial hypothesis. Using an interaction model in the DGE framework, we further demonstrated that tissue effects and residency status (CD69⁺ vs. CD69⁻) influence gene expression independently. Analysis of differentially expressed marker genes indicated that lymph node CD8⁺ T cells exhibit greater proliferative potential and reduced effector function compared to their bone marrow counterparts.
+
+A major limitation of this analysis lies in the unresolved contribution of pre-mature mRNAs. Although intronic reads were discarded, it remains difficult to determine whether reads mapping to exons originated from mature transcripts or incompletely processed pre-mRNAs. This may lead to potential overestimation of gene expression levels. A possible future direction is to include intronic reads in the analysis and compare results, which may provide a more comprehensive understanding of transcriptomic regulation.
+
+# Code and data availability
+All code and processed read count data necessary to reproduce the analysis are provided in https://github.com/minhongz/angsd-project. Scripts for preprocessing can be found in `preprocessing_all_final.sh` and `download.sh`. Scripts for R analysis are included in this report.
+
+The raw RNA-seq datasets are publicly available from the NCBI Gene Expression Omnibus under accession number GSE106420: https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE106420
+
+Intermediate data files generated during the preprocessing steps are stored on the Cayuga HPC cluster under the directory `/athena/angsd/scratch/miz4010/project`. The folder structure is organized as follows:
+
+```{bash, eval=FALSE}
+project/
+├── raw_fastq/                 # raw reads fastq files
+├── trimmed_fastq/             # rRNA-removed reads fastq files
+├── alignment/                 # alignment BAM files of raw reads
+├── alignment_trimmed/         # alignment BAM files of rRNA-removed reads
+└── featureCounts/             # gene counts matrix
+```
+
+# Author statement
+All analyses and code presented in this project were written and executed by the author. Generative AI tools were used solely for the purpose of language polishing and improving clarity of written text. No code generation or data analysis was performed by AI.
+
+# Reference
+
+<div id="refs"></div>
+
+
+
