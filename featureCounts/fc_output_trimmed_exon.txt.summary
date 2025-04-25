@@ -1,0 +1,15 @@
+Status	./alignment_trimmed/bm_cd69neg_ind1/bm_cd69neg_ind1.STAR.Aligned.sortedByCoord.out.bam	./alignment_trimmed/bm_cd69neg_ind2/bm_cd69neg_ind2.STAR.Aligned.sortedByCoord.out.bam	./alignment_trimmed/bm_cd69neg_ind3/bm_cd69neg_ind3.STAR.Aligned.sortedByCoord.out.bam	./alignment_trimmed/bm_cd69pos_ind1/bm_cd69pos_ind1.STAR.Aligned.sortedByCoord.out.bam	./alignment_trimmed/bm_cd69pos_ind2/bm_cd69pos_ind2.STAR.Aligned.sortedByCoord.out.bam	./alignment_trimmed/bm_cd69pos_ind3/bm_cd69pos_ind3.STAR.Aligned.sortedByCoord.out.bam	./alignment_trimmed/ln_cd69neg_ind1/ln_cd69neg_ind1.STAR.Aligned.sortedByCoord.out.bam	./alignment_trimmed/ln_cd69neg_ind2/ln_cd69neg_ind2.STAR.Aligned.sortedByCoord.out.bam	./alignment_trimmed/ln_cd69neg_ind3/ln_cd69neg_ind3.STAR.Aligned.sortedByCoord.out.bam	./alignment_trimmed/ln_cd69pos_ind1/ln_cd69pos_ind1.STAR.Aligned.sortedByCoord.out.bam	./alignment_trimmed/ln_cd69pos_ind2/ln_cd69pos_ind2.STAR.Aligned.sortedByCoord.out.bam	./alignment_trimmed/ln_cd69pos_ind3/ln_cd69pos_ind3.STAR.Aligned.sortedByCoord.out.bam
+Assigned	14604879	15142223	15653872	7702946	10914443	6916513	7229369	12027221	9161333	4627728	8728322	6882296
+Unassigned_Unmapped	1432757	819380	1044258	687616	703902	767724	763078	977675	910164	708770	602264	754404
+Unassigned_Read_Type	0	0	0	0	0	0	0	0	0	0	0	0
+Unassigned_Singleton	0	0	0	0	0	0	0	0	0	0	0	0
+Unassigned_MappingQuality	0	0	0	0	0	0	0	0	0	0	0	0
+Unassigned_Chimera	0	0	0	0	0	0	0	0	0	0	0	0
+Unassigned_FragmentLength	0	0	0	0	0	0	0	0	0	0	0	0
+Unassigned_Duplicate	0	0	0	0	0	0	0	0	0	0	0	0
+Unassigned_MultiMapping	5871537	6252204	5900144	3154627	4070912	3524743	5606435	4438575	3723382	3421430	3331071	2749173
+Unassigned_Secondary	0	0	0	0	0	0	0	0	0	0	0	0
+Unassigned_NonSplit	0	0	0	0	0	0	0	0	0	0	0	0
+Unassigned_NoFeatures	15662721	12499391	16653324	9923065	9065400	10717569	15977363	20324295	19474543	11066286	13375254	13706277
+Unassigned_Overlapping_Length	0	0	0	0	0	0	0	0	0	0	0	0
+Unassigned_Ambiguity	1305479	1838192	1652634	645500	1065516	492305	571671	919858	536530	453173	796008	434172
